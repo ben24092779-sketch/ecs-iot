@@ -22,6 +22,7 @@
 #include <Arduino.h>
 #include <WiFi.h>
 #include <PubSubClient.h>
+#include "emqx_ca.h"
 #include <WebServer.h>
 #include <Wire.h>
 #include <OneWire.h>
@@ -106,11 +107,11 @@ const char* WIFI_SSID = "TU_WIFI_2_4_GHZ";
 const char* WIFI_PASS = "TU_CLAVE_WIFI";
 
 // ===== MQTT - Tarea 2 IoT =====
-// Broker Mosquitto ejecutándose en el notebook dentro de la misma LAN.
-const char* MQTT_HOST = "192.168.100.95";
-const uint16_t MQTT_PORT = 1883;
-const char* MQTT_USER = "ecs";
-const char* MQTT_PASS = "PEGA_AQUI_MQTT_PASSWORD_DEL_ENV";
+// Broker EMQX Cloud Serverless. MQTT cifrado por TLS.
+const char* MQTT_HOST = "ada6f11f.ala.us-east-1.emqxsl.com";
+const uint16_t MQTT_PORT = 8883;
+const char* MQTT_USER = "esp32-ender";
+const char* MQTT_PASS = "PEGA_AQUI_PASSWORD_DE_esp32-ender";
 
 // Debe coincidir con el dispositivo creado en Django.
 const char* MQTT_DEVICE = "ender-esp32";
@@ -329,7 +330,7 @@ Adafruit_SSD1306 display(128, 64, &Wire, -1);
 Servo servoPower;
 Preferences prefs;
 
-WiFiClient mqttWiFiClient;
+WiFiClientSecure mqttWiFiClient;
 PubSubClient mqttClient(mqttWiFiClient);
 uint32_t ultimoIntentoMQTT = 0;
 uint32_t ultimaPublicacionMQTT = 0;
@@ -1485,8 +1486,11 @@ void setup() {
   WiFi.setAutoReconnect(true);
   WiFi.begin(WIFI_SSID, WIFI_PASS);
 
+  // Validación TLS del broker EMQX Cloud. No usar setInsecure().
+  mqttWiFiClient.setCACert(EMQX_ROOT_CA);
+  mqttWiFiClient.setHandshakeTimeout(15);
   mqttClient.setServer(MQTT_HOST, MQTT_PORT);
-  mqttClient.setSocketTimeout(2);
+  mqttClient.setSocketTimeout(5);
   mqttClient.setBufferSize(512);
 
   iniciarNube();
