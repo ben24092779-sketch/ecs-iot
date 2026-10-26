@@ -23,6 +23,7 @@
 #include <WiFi.h>
 #include <PubSubClient.h>
 #include "emqx_ca.h"
+#include "local_secrets.h"
 #include <WebServer.h>
 #include <Wire.h>
 #include <OneWire.h>
@@ -102,28 +103,20 @@ void iniciarServidor();
 void setup();
 void loop();
 
-// WIFI: se conservan los valores del archivo original al generar esta revisión.
-const char* WIFI_SSID = "TU_WIFI_2_4_GHZ";
-const char* WIFI_PASS = "TU_CLAVE_WIFI";
+// WIFI y secretos privados se cargan desde local_secrets.h.
+// Ese archivo es local y no debe subirse a GitHub.
 
 // ===== MQTT - Tarea 2 IoT =====
 // Broker EMQX Cloud Serverless. MQTT cifrado por TLS.
 const char* MQTT_HOST = "ada6f11f.ala.us-east-1.emqxsl.com";
 const uint16_t MQTT_PORT = 8883;
 const char* MQTT_USER = "esp32-ender";
-const char* MQTT_PASS = "PEGA_AQUI_PASSWORD_DE_esp32-ender";
 
 // Debe coincidir con el dispositivo creado en Django.
 const char* MQTT_DEVICE = "ender-esp32";
-const char* MQTT_TOKEN = "PEGA_AQUI_TOKEN_DJANGO_ENDER_ESP32";
 
 const uint32_t INTERVALO_RECONEXION_MQTT = 5000UL;
 const uint32_t INTERVALO_PUBLICACION_MQTT = 3000UL;
-
-
-
-// Clave original de tu Apps Script. No se sirve al navegador.
-const char* SHEETS_SECRET_KEY = "PEGA_AQUI_TU_CLAVE_EXISTENTE_DE_SHEETS";
 // Raíces públicas Google Trust Services R1, R3 y R4 del almacén CA del sistema.
 const char GOOGLE_ROOT_CA[] PROGMEM = 
 "-----BEGIN CERTIFICATE-----\n"
