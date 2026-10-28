@@ -1,6 +1,7 @@
 import json
 import logging
 import secrets
+import ssl
 
 import paho.mqtt.client as mqtt
 from django.conf import settings
@@ -17,6 +18,7 @@ DEFAULT_UNITS = {
     "voltaje": "V",
     "continuidad": "Ω",
     "temperatura": "°C",
+    "temperatura_carpa": "°C",
     "humedad": "%",
     "presion": "hPa",
     "gas": "kΩ",
@@ -32,6 +34,14 @@ class Command(BaseCommand):
         client = mqtt.Client()
         if settings.MQTT_USERNAME:
             client.username_pw_set(settings.MQTT_USERNAME, settings.MQTT_PASSWORD)
+
+        if settings.MQTT_TLS_ENABLED:
+            client.tls_set(
+                ca_certs=settings.MQTT_CA_CERT or None,
+                cert_reqs=ssl.CERT_REQUIRED,
+                tls_version=ssl.PROTOCOL_TLS_CLIENT,
+            )
+            client.tls_insecure_set(False)
 
         def on_connect(client, userdata, flags, rc):
             if rc == 0:
