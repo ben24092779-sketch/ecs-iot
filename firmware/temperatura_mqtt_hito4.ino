@@ -86,7 +86,9 @@ void actualizarTemperatura(uint32_t ahora);
 void actualizarOLED(uint32_t ahora);
 void actualizarWiFi(uint32_t ahora);
 void conectarMQTT(uint32_t ahora);
+void publicarEstadoMQTT(const char* variable, float valor);
 void publicarTemperaturaMQTT(uint32_t ahora);
+void recibirComandoMQTT(char* topic, byte* payload, unsigned int length);
 void actualizarMQTT(uint32_t ahora);
 String jsonString(const String& texto);
 void enviarError(int codigo, const String& mensaje);
@@ -954,10 +956,42 @@ void conectarMQTT(uint32_t ahora) {
 
   if (mqttClient.connect(clientId.c_str(), MQTT_USER, MQTT_PASS)) {
     Serial.println("MQTT: conectado.");
+
+    char topicComandos[96];
+    snprintf(topicComandos, sizeof(topicComandos), "ecs/%s/+/set", MQTT_DEVICE);
+    bool suscrito = mqttClient.subscribe(topicComandos, 1);
+    Serial.print("MQTT comandos: ");
+    Serial.println(suscrito ? "suscrito." : "ERROR al suscribir.");
+
+    // Publicar el estado real al reconectar para que Django pueda crear/actualizar el sensor.
+    publicarEstadoMQTT("luz", ledEncendido ? 1.0f : 0.0f);
   } else {
     Serial.print("MQTT: fallo rc=");
     Serial.println(mqttClient.state());
   }
+}
+
+void publicarEstadoMQTT(const char* variable, float valor) {
+  if (!mqttClient.connected()) return;
+
+  char topic[96];
+  snprintf(topic, sizeof(topic), "ecs/%s/%s", MQTT_DEVICE, variable);
+
+  JsonDocument d;
+  d["value"] = valor;
+  d["token"] = MQTT_TOKEN;
+
+  String payload;
+  serializeJson(d, payload);
+
+  bool ok = mqttClient.publish(topic, payload.c_str(), false);
+
+  Serial.print("MQTT estado ");
+  Serial.print(variable);
+  Serial.print(": ");
+  Serial.print(valor, 0);
+  Serial.print(" -> ");
+  Serial.println(ok ? "OK" : "ERROR");
 }
 
 void publicarTemperaturaMQTT(uint32_t ahora) {
@@ -982,6 +1016,57 @@ void publicarTemperaturaMQTT(uint32_t ahora) {
   Serial.print(temperatura, 2);
   Serial.print(" C -> ");
   Serial.println(ok ? "OK" : "ERROR");
+}
+
+void recibirComandoMQTT(char* topic, byte* payload, unsigned int length) {
+  if (!topic || !payload || length == 0 || length >= 512) {
+    Serial.println("MQTT comando: payload invalido.");
+    return;
+  }
+
+  char cuerpo[512];
+  memcpy(cuerpo, payload, length);
+  cuerpo[length] = '\0';
+
+  JsonDocument d;
+  DeserializationError err = deserializeJson(d, cuerpo);
+  if (err) {
+    Serial.println("MQTT comando: JSON invalido.");
+    return;
+  }
+
+  const char* token = d["token"] | "";
+  if (!token[0] || strcmp(token, MQTT_TOKEN) != 0) {
+    Serial.println("MQTT comando: token invalido.");
+    return;
+  }
+
+  if (d["value"].isNull()) {
+    Serial.println("MQTT comando: falta value.");
+    return;
+  }
+
+  String topicLuz = "ecs/" + String(MQTT_DEVICE) + "/luz/set";
+  if (String(topic) != topicLuz) {
+    Serial.print("MQTT comando no implementado: ");
+    Serial.println(topic);
+    return;
+  }
+
+  float valor = d["value"].as<float>();
+  if (!(valor == 0.0f || valor == 1.0f)) {
+    Serial.println("MQTT comando luz: solo se acepta 0 o 1.");
+    return;
+  }
+
+  ledEncendido = valor >= 0.5f;
+  digitalWrite(LED_PIN, ledEncendido ? HIGH : LOW);
+
+  Serial.print("MQTT comando luz: ");
+  Serial.println(ledEncendido ? "ON" : "OFF");
+
+  // Confirmación del estado realmente aplicado, sin asumir que el comando funcionó.
+  publicarEstadoMQTT("luz", ledEncendido ? 1.0f : 0.0f);
 }
 
 void actualizarMQTT(uint32_t ahora) {
@@ -1434,12 +1519,14 @@ void iniciarServidor() {
     if (!autorizarCambio(false)) return;
     ledEncendido = true;
     digitalWrite(LED_PIN, HIGH);
+    publicarEstadoMQTT("luz", 1.0f);
     server.send(200, "text/plain; charset=utf-8", "Luz encendida.");
   });
   server.on("/led/off", HTTP_POST, []() {
     if (!autorizarCambio(false)) return;
     ledEncendido = false;
     digitalWrite(LED_PIN, LOW);
+    publicarEstadoMQTT("luz", 0.0f);
     server.send(200, "text/plain; charset=utf-8", "Luz apagada.");
   });
   server.on("/config-servo", HTTP_POST, handleConfigServo);
@@ -1483,6 +1570,7 @@ void setup() {
   mqttWiFiClient.setCACert(EMQX_ROOT_CA);
   mqttWiFiClient.setHandshakeTimeout(15);
   mqttClient.setServer(MQTT_HOST, MQTT_PORT);
+  mqttClient.setCallback(recibirComandoMQTT);
   mqttClient.setSocketTimeout(5);
   mqttClient.setBufferSize(512);
 
