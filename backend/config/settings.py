@@ -103,6 +103,8 @@ MQTT_BROKER_PORT = env.int("MQTT_BROKER_PORT", default=1883)
 MQTT_USERNAME = env("MQTT_USERNAME", default="")
 MQTT_PASSWORD = env("MQTT_PASSWORD", default="")
 MQTT_TOPIC_PREFIX = env("MQTT_TOPIC_PREFIX", default="ecs")
+MQTT_TLS_ENABLED = env.bool("MQTT_TLS_ENABLED", default=False)
+MQTT_CA_CERT = env("MQTT_CA_CERT", default="")
 
 # --- Google Maps (geolocalización de dispositivos y puestas a tierra) ---
 GOOGLE_MAPS_API_KEY = env("GOOGLE_MAPS_API_KEY", default="")
