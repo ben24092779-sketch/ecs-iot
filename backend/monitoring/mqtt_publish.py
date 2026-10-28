@@ -1,5 +1,6 @@
 import json
 import logging
+import ssl
 
 import paho.mqtt.publish as publish
 from django.conf import settings
@@ -20,6 +21,14 @@ def publish_command(device, variable, value):
     if settings.MQTT_USERNAME:
         auth = {"username": settings.MQTT_USERNAME, "password": settings.MQTT_PASSWORD}
 
+    tls = None
+    if settings.MQTT_TLS_ENABLED:
+        tls = {
+            "ca_certs": settings.MQTT_CA_CERT or None,
+            "cert_reqs": ssl.CERT_REQUIRED,
+            "tls_version": ssl.PROTOCOL_TLS_CLIENT,
+        }
+
     try:
         publish.single(
             topic,
@@ -28,6 +37,7 @@ def publish_command(device, variable, value):
             hostname=settings.MQTT_BROKER_HOST,
             port=settings.MQTT_BROKER_PORT,
             auth=auth,
+            tls=tls,
         )
     except Exception:
         logger.exception("Failed to publish command to %s", topic)
