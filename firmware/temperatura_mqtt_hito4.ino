@@ -857,8 +857,14 @@ void actualizarServo(uint32_t ahora) {
   if (!servoOK) return;
   ControlImpresora::Fase antes = control.fase;
   if (control.avanzarServo(ahora)) servoPower.write(control.posicion);
-  if (antes != control.fase && control.fase == ControlImpresora::REPOSO)
-    ultimoMovimiento = "Servo retirado: reposo";
+  if (antes != control.fase) {
+    if (control.fase == ControlImpresora::REPOSO) {
+      ultimoMovimiento = "Servo retirado: reposo";
+      publicarEstadoMQTT("servo", 0.0f);
+    } else if (antes == ControlImpresora::REPOSO) {
+      publicarEstadoMQTT("servo", 1.0f);
+    }
+  }
 }
 
 void registrarSample(uint32_t ahora) {
@@ -887,6 +893,7 @@ void actualizarTemperatura(uint32_t ahora) {
     if (!estabaOcupado && control.ocupado()) {
       pausarRegistro();
       ultimoMovimiento = "Apagado automatico solicitado";
+      publicarEstadoMQTT("servo", 1.0f);
     }
     registrarSample(ahora);
   }
@@ -958,13 +965,13 @@ void conectarMQTT(uint32_t ahora) {
     Serial.println("MQTT: conectado.");
 
     char topicComandos[96];
-    snprintf(topicComandos, sizeof(topicComandos), "ecs/%s/+/set", MQTT_DEVICE);
+    snprintf(topicComandos, sizeof(topicComandos), "ecs/%s/servo/set", MQTT_DEVICE);
     bool suscrito = mqttClient.subscribe(topicComandos, 1);
-    Serial.print("MQTT comandos: ");
+    Serial.print("MQTT comando servo: ");
     Serial.println(suscrito ? "suscrito." : "ERROR al suscribir.");
 
-    // Publicar el estado real al reconectar para que Django pueda crear/actualizar el sensor.
-    publicarEstadoMQTT("luz", ledEncendido ? 1.0f : 0.0f);
+    // Estado 0 = reposo; 1 = servo ejecutando el ciclo de apagado/retorno.
+    publicarEstadoMQTT("servo", control.ocupado() ? 1.0f : 0.0f);
   } else {
     Serial.print("MQTT: fallo rc=");
     Serial.println(mqttClient.state());
@@ -1046,27 +1053,42 @@ void recibirComandoMQTT(char* topic, byte* payload, unsigned int length) {
     return;
   }
 
-  String topicLuz = "ecs/" + String(MQTT_DEVICE) + "/luz/set";
-  if (String(topic) != topicLuz) {
+  String topicServo = "ecs/" + String(MQTT_DEVICE) + "/servo/set";
+  if (String(topic) != topicServo) {
     Serial.print("MQTT comando no implementado: ");
     Serial.println(topic);
     return;
   }
 
   float valor = d["value"].as<float>();
-  if (!(valor == 0.0f || valor == 1.0f)) {
-    Serial.println("MQTT comando luz: solo se acepta 0 o 1.");
+  if (valor != 1.0f) {
+    Serial.println("MQTT comando servo: solo se acepta value=1 para solicitar apagado.");
+    publicarEstadoMQTT("servo", control.ocupado() ? 1.0f : 0.0f);
     return;
   }
 
-  ledEncendido = valor >= 0.5f;
-  digitalWrite(LED_PIN, ledEncendido ? HIGH : LOW);
+  if (!servoOK) {
+    Serial.println("MQTT comando servo: servo no disponible.");
+    publicarEstadoMQTT("servo", 0.0f);
+    return;
+  }
 
-  Serial.print("MQTT comando luz: ");
-  Serial.println(ledEncendido ? "ON" : "OFF");
+  if (control.ocupado()) {
+    Serial.println("MQTT comando servo: servo ocupado.");
+    publicarEstadoMQTT("servo", 1.0f);
+    return;
+  }
 
-  // Confirmación del estado realmente aplicado, sin asumir que el comando funcionó.
-  publicarEstadoMQTT("luz", ledEncendido ? 1.0f : 0.0f);
+  if (!control.pedirApagado(millis(), false)) {
+    Serial.println("MQTT comando servo: no se pudo iniciar el ciclo.");
+    publicarEstadoMQTT("servo", control.ocupado() ? 1.0f : 0.0f);
+    return;
+  }
+
+  pausarRegistro();
+  ultimoMovimiento = "Apagado remoto MQTT solicitado";
+  publicarEstadoMQTT("servo", 1.0f);
+  Serial.println("MQTT comando servo: apagado solicitado.");
 }
 
 void actualizarMQTT(uint32_t ahora) {
@@ -1496,6 +1518,7 @@ void iniciarServidor() {
     if (!control.pedirApagado(millis(), false)) { enviarError(409, "El servo esta ocupado."); return; }
     pausarRegistro();
     ultimoMovimiento = "Apagado manual solicitado";
+    publicarEstadoMQTT("servo", 1.0f);
     server.send(202, "text/plain; charset=utf-8", "Apagado solicitado y registro en pausa. El servo regresara a reposo tras 5 s en apagado.");
   });
   // No existe /printer/on ni botones de encendido de la impresora.
@@ -1508,6 +1531,7 @@ void iniciarServidor() {
     }
     control.pedirMovimiento(millis(), int(angulo), false);
     ultimoMovimiento = "Prueba de calibracion";
+    publicarEstadoMQTT("servo", control.ocupado() ? 1.0f : 0.0f);
     server.send(202, "text/plain; charset=utf-8", "Prueba iniciada; regresara a reposo despues de 5 s.");
   });
   server.on("/reset-auto", HTTP_POST, []() {
@@ -1519,14 +1543,12 @@ void iniciarServidor() {
     if (!autorizarCambio(false)) return;
     ledEncendido = true;
     digitalWrite(LED_PIN, HIGH);
-    publicarEstadoMQTT("luz", 1.0f);
     server.send(200, "text/plain; charset=utf-8", "Luz encendida.");
   });
   server.on("/led/off", HTTP_POST, []() {
     if (!autorizarCambio(false)) return;
     ledEncendido = false;
     digitalWrite(LED_PIN, LOW);
-    publicarEstadoMQTT("luz", 0.0f);
     server.send(200, "text/plain; charset=utf-8", "Luz apagada.");
   });
   server.on("/config-servo", HTTP_POST, handleConfigServo);
