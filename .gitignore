@@ -29,3 +29,6 @@ Thumbs.db
 
 # Logs
 *.log
+
+# Raspberry Pi gateway local secrets
+rpi_gateway/*.env
