@@ -46,7 +46,12 @@ services:
     env_file: .env
     environment:
       POSTGRES_HOST: db
-      MQTT_BROKER_HOST: mosquitto
+      MQTT_BROKER_HOST: ${MQTT_CLOUD_BROKER_HOST}
+      MQTT_BROKER_PORT: ${MQTT_CLOUD_BROKER_PORT:-8883}
+      MQTT_USERNAME: ${MQTT_CLOUD_USERNAME}
+      MQTT_PASSWORD: ${MQTT_CLOUD_PASSWORD}
+      MQTT_TLS_ENABLED: ${MQTT_CLOUD_TLS_ENABLED:-true}
+      MQTT_CA_CERT: ${MQTT_CLOUD_CA_CERT:-/app/certs/emqxsl-ca.crt}
     volumes:
       - media_data:/app/media
     ports:
@@ -73,12 +78,15 @@ services:
     env_file: .env
     environment:
       POSTGRES_HOST: db
-      MQTT_BROKER_HOST: mosquitto
+      MQTT_BROKER_HOST: ${MQTT_CLOUD_BROKER_HOST}
+      MQTT_BROKER_PORT: ${MQTT_CLOUD_BROKER_PORT:-8883}
+      MQTT_USERNAME: ${MQTT_CLOUD_USERNAME}
+      MQTT_PASSWORD: ${MQTT_CLOUD_PASSWORD}
+      MQTT_TLS_ENABLED: ${MQTT_CLOUD_TLS_ENABLED:-true}
+      MQTT_CA_CERT: ${MQTT_CLOUD_CA_CERT:-/app/certs/emqxsl-ca.crt}
     command: python manage.py run_mqtt_listener
     depends_on:
       db:
-        condition: service_healthy
-      mosquitto:
         condition: service_healthy
       migrate:
         condition: service_completed_successfully
