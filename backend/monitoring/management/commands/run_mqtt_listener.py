@@ -66,6 +66,7 @@ class Command(BaseCommand):
             logger.warning("Disconnected from MQTT broker (rc=%s), will auto-reconnect", rc)
 
         def on_message(client, userdata, msg):
+            self.stdout.write(f"MQTT RX topic={msg.topic} bytes={len(msg.payload)}")
             try:
                 _handle_message(msg.topic, msg.payload)
             except Exception:
