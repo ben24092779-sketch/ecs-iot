@@ -21,6 +21,9 @@ OCTOPRINT_URL = os.getenv("OCTOPRINT_URL", "http://127.0.0.1").rstrip("/")
 OCTOPRINT_API_KEY = os.environ["OCTOPRINT_API_KEY"]
 POLL_SECONDS = float(os.getenv("POLL_SECONDS", "3"))
 REMOTE_CONTROL_ENABLED = os.getenv("REMOTE_CONTROL_ENABLED", "0") == "1"
+SUBSCRIBE_RETRY_SECONDS = 10.0
+subscription_ack = False
+last_subscribe_attempt = 0.0
 
 session = requests.Session()
 session.headers.update({"X-Api-Key": OCTOPRINT_API_KEY, "Content-Type": "application/json"})
@@ -136,13 +139,35 @@ def execute_command(variable: str, value: float):
         octo_post("/api/printer/bed", {"command": "target", "target": value})
 
 
+def request_command_subscription(client, force=False):
+    global last_subscribe_attempt
+    now = time.monotonic()
+    if not force and now - last_subscribe_attempt < SUBSCRIBE_RETRY_SECONDS:
+        return
+    last_subscribe_attempt = now
+    command_topic = f"ecs/{DEVICE_SLUG}/+/set"
+    result, mid = client.subscribe(command_topic, qos=1)
+    if result == mqtt.MQTT_ERR_SUCCESS:
+        LOG.info("Subscription requested: %s qos=1 mid=%s", command_topic, mid)
+    else:
+        LOG.error("Subscription request failed: %s rc=%s", command_topic, result)
+
+
 def on_connect(client, userdata, flags, rc, properties=None):
+    global subscription_ack
     if rc == 0:
+        subscription_ack = False
         LOG.info("Connected to EMQX")
-        client.subscribe(f"ecs/{DEVICE_SLUG}/+/set", qos=1)
+        request_command_subscription(client, force=True)
         publish_value(client, "raspberry_online", 1)
     else:
         LOG.error("MQTT connection failed rc=%s", rc)
+
+
+def on_subscribe(client, userdata, mid, reason_codes=None, properties=None):
+    global subscription_ack
+    subscription_ack = True
+    LOG.info("Subscription ACK received: mid=%s reason=%s", mid, reason_codes)
 
 
 def on_message(client, userdata, msg):
@@ -179,6 +204,7 @@ def build_client():
     offline = json.dumps({"value": 0, "token": DEVICE_TOKEN}, separators=(",", ":"))
     client.will_set(topic("raspberry_online"), payload=offline, qos=1, retain=False)
     client.on_connect = on_connect
+    client.on_subscribe = on_subscribe
     client.on_message = on_message
     client.reconnect_delay_set(min_delay=1, max_delay=30)
     return client
@@ -192,6 +218,8 @@ def main():
     try:
         while True:
             if client.is_connected():
+                if not subscription_ack:
+                    request_command_subscription(client)
                 publish_telemetry(client)
             time.sleep(POLL_SECONDS)
     finally:
