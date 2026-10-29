@@ -53,6 +53,7 @@ class Command(BaseCommand):
                             raise ConnectionError("No fue posible conectar al PLC")
                         self.stdout.write(self.style.SUCCESS("PLC conectado"))
 
+                    values = {}
                     for slug, variable, offset, label in REAL_SIGNALS:
                         sensor = Sensor.objects.get(
                             device__slug=slug,
@@ -61,6 +62,7 @@ class Command(BaseCommand):
                         )
                         reading = sensor.readings.order_by("-timestamp").first()
                         value = float(reading.value) if reading else 0.0
+                        values[label] = value
 
                         plc.db_write(
                             db_number,
@@ -86,12 +88,8 @@ class Command(BaseCommand):
                     self.stdout.write(
                         "SYNC OK | "
                         + " | ".join(
-                            [
-                                f"{label}={float(Sensor.objects.get(device__slug=slug, variable=variable).readings.order_by('-timestamp').first().value):.2f}"
-                                if Sensor.objects.get(device__slug=slug, variable=variable).readings.order_by("-timestamp").first()
-                                else f"{label}=0.00"
-                                for slug, variable, _, label in REAL_SIGNALS
-                            ]
+                            f"{label}={values[label]:.2f}"
+                            for _, _, _, label in REAL_SIGNALS
                         )
                         + f" | RaspberryOnline={online}"
                     )
