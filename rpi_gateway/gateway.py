@@ -171,7 +171,9 @@ def on_connect(client, userdata, flags, rc, properties=None):
         subscription_ack = False
         LOG.info("Connected to EMQX")
         request_command_subscription(client, force=True)
-        publish_value(client, "raspberry_online", 1)
+        # raspberry_online is published from the main telemetry loop.
+        # Do not wait for a QoS1 PUBACK inside on_connect because this callback
+        # runs on the MQTT network thread and would block processing that PUBACK.
     else:
         LOG.error("MQTT connection failed rc=%s", rc)
 
