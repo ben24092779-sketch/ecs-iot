@@ -5,6 +5,7 @@ import time
 from django.core.management.base import BaseCommand
 
 from monitoring.models import Sensor
+from monitoring.mqtt_publish import publish_command
 
 try:
     from s7 import Client
@@ -14,16 +15,20 @@ except ImportError as exc:
     ) from exc
 
 
-REAL_SIGNALS = [
+TELEMETRY_SIGNALS = [
     ("ender-esp32", "temperatura_carpa", 0, "TemperaturaCarpa"),
     ("ender-rpi", "temp_hotend", 4, "TempHotend"),
-    ("ender-rpi", "sp_hotend", 8, "SPHotend"),
     ("ender-rpi", "temp_bed", 12, "TempBed"),
-    ("ender-rpi", "sp_bed", 16, "SPBed"),
     ("ender-rpi", "print_progress", 20, "ProgresoImpresion"),
     ("ender-rpi", "print_time_s", 24, "TiempoImpresion"),
     ("ender-rpi", "printer_state", 28, "EstadoImpresora"),
 ]
+
+COMMAND_SIGNALS = [
+    ("ender-rpi", "sp_hotend", 8, "SPHotend", 0.0, 240.0),
+    ("ender-rpi", "sp_bed", 16, "SPBed", 0.0, 100.0),
+]
+
 
 
 class Command(BaseCommand):
@@ -35,8 +40,12 @@ class Command(BaseCommand):
         slot = int(os.getenv("PLC_SLOT", "1"))
         db_number = int(os.getenv("PLC_DB_NUMBER", "1"))
         interval = float(os.getenv("PLC_SYNC_INTERVAL", "2"))
+        commands_enabled = os.getenv("PLC_COMMANDS_ENABLED", "false").lower() in {
+            "1", "true", "yes", "on"
+        }
 
         plc = Client()
+        last_commands = {}
 
         self.stdout.write(
             self.style.SUCCESS(
@@ -54,7 +63,7 @@ class Command(BaseCommand):
                         self.stdout.write(self.style.SUCCESS("PLC conectado"))
 
                     values = {}
-                    for slug, variable, offset, label in REAL_SIGNALS:
+                    for slug, variable, offset, label in TELEMETRY_SIGNALS:
                         sensor = Sensor.objects.get(
                             device__slug=slug,
                             variable=variable,
@@ -85,11 +94,75 @@ class Command(BaseCommand):
                         status_byte[0] &= 0xFE
                     plc.db_write(db_number, 32, status_byte)
 
+                    # Los setpoints son comandos PLC -> Ender. Al conectar por
+                    # primera vez se inicializan con el ultimo valor conocido de Django
+                    # para evitar enviar un comando accidental.
+                    if not last_commands:
+                        for slug, variable, offset, label, min_value, max_value in COMMAND_SIGNALS:
+                            sensor = Sensor.objects.get(
+                                device__slug=slug,
+                                variable=variable,
+                                is_active=True,
+                            )
+                            reading = sensor.readings.order_by("-timestamp").first()
+                            value = float(reading.value) if reading else 0.0
+                            value = max(min_value, min(max_value, value))
+                            plc.db_write(
+                                db_number,
+                                offset,
+                                bytearray(struct.pack(">f", value)),
+                            )
+                            last_commands[variable] = value
+                            values[label] = value
+                    else:
+                        for slug, variable, offset, label, min_value, max_value in COMMAND_SIGNALS:
+                            raw = plc.db_read(db_number, offset, 4)
+                            value = struct.unpack(">f", bytes(raw))[0]
+                            values[label] = value
+
+                            if not (min_value <= value <= max_value):
+                                self.stderr.write(
+                                    self.style.ERROR(
+                                        f"COMANDO RECHAZADO {label}={value:.2f}; "
+                                        f"rango permitido {min_value:.0f}-{max_value:.0f}"
+                                    )
+                                )
+                                continue
+
+                            previous = last_commands.get(variable)
+                            if previous is None or abs(value - previous) >= 0.1:
+                                if commands_enabled:
+                                    sensor = Sensor.objects.get(
+                                        device__slug=slug,
+                                        variable=variable,
+                                        is_active=True,
+                                    )
+                                    ok = publish_command(sensor.device, variable, value)
+                                    if ok:
+                                        self.stdout.write(
+                                            self.style.SUCCESS(
+                                                f"COMANDO PLC -> MQTT OK | {label}={value:.2f}"
+                                            )
+                                        )
+                                        last_commands[variable] = value
+                                    else:
+                                        self.stderr.write(
+                                            self.style.ERROR(
+                                                f"COMANDO PLC -> MQTT ERROR | {label}={value:.2f}"
+                                            )
+                                        )
+                                else:
+                                    self.stdout.write(
+                                        f"COMANDO PLC detectado (MQTT deshabilitado) | "
+                                        f"{label}={value:.2f}"
+                                    )
+                                    last_commands[variable] = value
+
                     self.stdout.write(
                         "SYNC OK | "
                         + " | ".join(
                             f"{label}={values[label]:.2f}"
-                            for _, _, _, label in REAL_SIGNALS
+                            for _, _, _, label in TELEMETRY_SIGNALS
                         )
                         + f" | RaspberryOnline={online}"
                     )
