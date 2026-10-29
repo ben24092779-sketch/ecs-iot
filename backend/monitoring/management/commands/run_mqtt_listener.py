@@ -59,6 +59,9 @@ class Command(BaseCommand):
             else:
                 self.stdout.write(self.style.ERROR(f"MQTT connect failed with rc={rc}"))
 
+        def on_subscribe(client, userdata, mid, granted_qos):
+            self.stdout.write(f"MQTT SUBACK mid={mid} granted_qos={granted_qos}")
+
         def on_disconnect(client, userdata, rc):
             logger.warning("Disconnected from MQTT broker (rc=%s), will auto-reconnect", rc)
 
@@ -69,6 +72,7 @@ class Command(BaseCommand):
                 logger.exception("Failed to process MQTT message on topic %s", msg.topic)
 
         client.on_connect = on_connect
+        client.on_subscribe = on_subscribe
         client.on_disconnect = on_disconnect
         client.on_message = on_message
 
