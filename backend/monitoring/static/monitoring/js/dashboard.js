@@ -49,7 +49,12 @@
         },
         body: JSON.stringify({ value: value }),
       });
-      return res.ok;
+      if (!res.ok) {
+        const detail = await res.text();
+        console.error("Command rejected", res.status, detail);
+        return false;
+      }
+      return true;
     } catch (err) {
       console.error("Command failed", err);
       return false;
@@ -138,8 +143,12 @@
     if (widgetType === "slider") {
       const slider = card.querySelector('[data-role="gadget-slider"]');
       slider.addEventListener("change", async () => {
-        pendingCommands[sensorId] = parseFloat(slider.value);
-        await postCommand(sensorId, parseFloat(slider.value));
+        const target = parseFloat(slider.value);
+        pendingCommands[sensorId] = target;
+        const ok = await postCommand(sensorId, target);
+        if (!ok) {
+          delete pendingCommands[sensorId];
+        }
       });
     }
   });
@@ -207,12 +216,19 @@
 
         if (widgetType === "slider") {
           const slider = card.querySelector('[data-role="gadget-slider"]');
-          if (!isSliderBeingDragged(slider)) {
-            slider.value = s.value;
-          }
           const pending = pendingCommands[s.id];
-          if (pending !== undefined && Math.abs(s.value - pending) < VALUE_TOLERANCE) {
-            delete pendingCommands[s.id];
+
+          if (pending !== undefined) {
+            if (Math.abs(s.value - pending) < VALUE_TOLERANCE) {
+              delete pendingCommands[s.id];
+              if (!isSliderBeingDragged(slider)) {
+                slider.value = s.value;
+              }
+            } else if (!isSliderBeingDragged(slider)) {
+              slider.value = pending;
+            }
+          } else if (!isSliderBeingDragged(slider)) {
+            slider.value = s.value;
           }
         }
       });
