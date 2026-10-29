@@ -52,6 +52,13 @@ class Command(BaseCommand):
                 f"PLC gateway iniciado: {host} rack={rack} slot={slot} DB={db_number}"
             )
         )
+        self.stdout.write(
+            self.style.SUCCESS("PLC -> MQTT: HABILITADO")
+            if commands_enabled
+            else self.style.WARNING(
+                "PLC -> MQTT: DESHABILITADO (solo lectura; define PLC_COMMANDS_ENABLED=true para enviar setpoints)"
+            )
+        )
 
         try:
             while True:
