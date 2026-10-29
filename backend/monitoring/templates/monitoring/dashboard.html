@@ -25,7 +25,19 @@
           {% with widget=sensor.get_widget %}
           <div class="sensor-card" data-sensor-id="{{ sensor.id }}" data-widget-type="{{ widget.widget_type }}">
             <div class="sensor-card-header">
-              <h3>{{ sensor.variable }} <span class="unit">{{ sensor.unit }}</span></h3>
+              <h3>
+                {% if sensor.variable == "temperatura_carpa" %}Temperatura de carpa
+                {% elif sensor.variable == "temp_hotend" %}Temperatura hotend
+                {% elif sensor.variable == "sp_hotend" %}Setpoint hotend
+                {% elif sensor.variable == "temp_bed" %}Temperatura cama
+                {% elif sensor.variable == "sp_bed" %}Setpoint cama
+                {% elif sensor.variable == "printer_state" %}Estado impresora
+                {% elif sensor.variable == "print_progress" %}Progreso de impresión
+                {% elif sensor.variable == "print_time_s" %}Tiempo de impresión
+                {% elif sensor.variable == "raspberry_online" %}Raspberry Pi en línea
+                {% else %}{{ sensor.variable }}{% endif %}
+                <span class="unit">{{ sensor.unit }}</span>
+              </h3>
               <a class="gadget-config-link" href="{% url 'monitoring:sensor-widget-edit' sensor.id %}" title="Configurar gadget">⚙</a>
             </div>
 
