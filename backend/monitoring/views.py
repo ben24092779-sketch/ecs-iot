@@ -10,6 +10,7 @@ from django.db.models import Count, Q
 from django.http import HttpResponseNotAllowed, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.utils import timezone
+from django.views.decorators.csrf import ensure_csrf_cookie
 from django.views.decorators.http import require_POST
 
 from .forms import (
@@ -40,6 +41,7 @@ SEED_READINGS_COUNT = 50
 
 
 @login_required
+@ensure_csrf_cookie
 def dashboard(request):
     devices = devices_for(request.user).filter(is_active=True).prefetch_related("sensors").order_by("name")
 
