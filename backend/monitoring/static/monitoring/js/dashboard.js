@@ -142,12 +142,22 @@
 
     if (widgetType === "slider") {
       const slider = card.querySelector('[data-role="gadget-slider"]');
+      const status = card.querySelector('[data-role="command-status"]');
+
+      slider.addEventListener("input", () => {
+        if (status) status.textContent = "Seleccionado: " + slider.value;
+      });
+
       slider.addEventListener("change", async () => {
         const target = parseFloat(slider.value);
         pendingCommands[sensorId] = target;
+        if (status) status.textContent = "Enviando " + target + "...";
         const ok = await postCommand(sensorId, target);
-        if (!ok) {
+        if (ok) {
+          if (status) status.textContent = "Comando enviado: " + target;
+        } else {
           delete pendingCommands[sensorId];
+          if (status) status.textContent = "ERROR al enviar comando";
         }
       });
     }
