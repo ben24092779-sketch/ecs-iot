@@ -101,6 +101,25 @@ services:
         - action: rebuild
           path: ./backend/requirements.txt
 
+  plc_gateway:
+    profiles: ["plc"]
+    build: ./backend
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      POSTGRES_HOST: db
+      PLC_HOST: ${PLC_HOST:-10.41.32.1}
+      PLC_RACK: ${PLC_RACK:-0}
+      PLC_SLOT: ${PLC_SLOT:-1}
+      PLC_DB_NUMBER: ${PLC_DB_NUMBER:-1}
+      PLC_SYNC_INTERVAL: ${PLC_SYNC_INTERVAL:-2}
+    command: python manage.py run_plc_gateway
+    depends_on:
+      db:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+
   simulator:
     build: ./simulator
     restart: unless-stopped
