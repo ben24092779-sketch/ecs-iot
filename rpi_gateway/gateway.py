@@ -35,9 +35,21 @@ def topic(variable: str) -> str:
 
 def publish_value(client, variable: str, value: float):
     payload = json.dumps({"value": float(value), "token": DEVICE_TOKEN}, separators=(",", ":"))
-    info = client.publish(topic(variable), payload=payload, qos=1, retain=False)
+    mqtt_topic = topic(variable)
+    info = client.publish(mqtt_topic, payload=payload, qos=1, retain=False)
     if info.rc != mqtt.MQTT_ERR_SUCCESS:
         LOG.warning("MQTT publish failed for %s (rc=%s)", variable, info.rc)
+        return False
+    try:
+        info.wait_for_publish(timeout=5.0)
+    except Exception as exc:
+        LOG.warning("MQTT PUBACK timeout/error for %s: %s", variable, exc)
+        return False
+    if not info.is_published():
+        LOG.warning("MQTT PUBACK not received for %s", variable)
+        return False
+    LOG.info("MQTT PUBACK OK: %s -> %s", mqtt_topic, value)
+    return True
 
 
 def octo_get(path: str):
