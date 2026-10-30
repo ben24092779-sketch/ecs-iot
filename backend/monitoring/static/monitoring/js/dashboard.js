@@ -195,6 +195,10 @@
     if (widgetType === "slider") {
       const slider = card.querySelector('[data-role="gadget-slider"]');
       const status = card.querySelector('[data-role="command-status"]');
+      slider.addEventListener("pointerdown", () => { slider.dataset.dragging = "1"; });
+      slider.addEventListener("pointerup", () => { slider.dataset.dragging = "0"; });
+      slider.addEventListener("pointercancel", () => { slider.dataset.dragging = "0"; });
+      slider.addEventListener("blur", () => { slider.dataset.dragging = "0"; });
 
       // Feedback inmediato: el número mostrado mientras se arrastra es un
       // valor SOLICITADO, no la confirmación de que el hardware ya lo aplicó.
@@ -229,7 +233,9 @@
   });
 
   function isSliderBeingDragged(slider) {
-    return document.activeElement === slider;
+    // Tener foco no significa estar arrastrando: antes podía impedir que el
+    // valor confirmado actualizara el slider hasta hacer clic fuera.
+    return slider.dataset.dragging === "1";
   }
 
   async function poll() {
