@@ -6,7 +6,7 @@ from django.templatetags.static import static
 from django.contrib.auth.decorators import login_required
 from django.contrib.auth.models import User
 from django.core.exceptions import PermissionDenied
-from django.db.models import Count, Q
+from django.db.models import Count, Prefetch, Q
 from django.http import HttpResponseNotAllowed, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.utils import timezone
@@ -43,11 +43,20 @@ SEED_READINGS_COUNT = 50
 @login_required
 @ensure_csrf_cookie
 def dashboard(request):
-    devices = devices_for(request.user).filter(is_active=True).prefetch_related("sensors").order_by("name")
+    # Alcance final del proyecto: el servo fue retirado del montaje físico.
+    # Lo excluimos también a nivel de consulta para que un registro legado
+    # en PostgreSQL no vuelva a aparecer en el dashboard.
+    visible_sensors = Sensor.objects.filter(is_active=True).exclude(variable="servo")
+    devices = (
+        devices_for(request.user)
+        .filter(is_active=True)
+        .prefetch_related(Prefetch("sensors", queryset=visible_sensors))
+        .order_by("name")
+    )
 
     seed_data = {}
     for device in devices:
-        for sensor in device.sensors.filter(is_active=True):
+        for sensor in device.sensors.all():
             readings = list(sensor.readings.order_by("-timestamp")[:SEED_READINGS_COUNT])
             readings.reverse()
             seed_data[sensor.id] = [{"t": r.timestamp.isoformat(), "v": r.value} for r in readings]
@@ -62,9 +71,13 @@ def dashboard(request):
 @login_required
 def api_latest_values(request):
     visible_devices = devices_for(request.user)
-    sensors = Sensor.objects.filter(
-        is_active=True, device__is_active=True, device__in=visible_devices
-    ).select_related("device")
+    sensors = (
+        Sensor.objects.filter(
+            is_active=True, device__is_active=True, device__in=visible_devices
+        )
+        .exclude(variable="servo")
+        .select_related("device")
+    )
 
     sensor_payload = []
     for sensor in sensors:
