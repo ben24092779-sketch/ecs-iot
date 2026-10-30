@@ -6,7 +6,7 @@ Plataforma web de supervisión y control remoto para una **impresora 3D Creality
 
 El proyecto integra una **ESP32 con sensor DS18B20**, una **Raspberry Pi 3B+ con OctoPrint**, **EMQX Cloud (MQTT/TLS)**, **PostgreSQL** y un **gateway Python/Snap7 para un PLC Siemens desde TIA Portal**. El dashboard y el login fueron rediseñados con identidad visual **ENDER IIoT**.
 
-> **Versión del proyecto para evaluación:** rama [`hito9-plc`](https://github.com/ben24092779-sketch/ecs-iot/tree/hito9-plc). Hasta integrar esta rama a `main`, usar expresamente `hito9-plc` al revisar o clonar el trabajo.
+> **Versión oficial para evaluación:** rama [`main`](https://github.com/ben24092779-sketch/ecs-iot/tree/main). Contiene la integración de la entrega mediante el [Pull Request #1](https://github.com/ben24092779-sketch/ecs-iot/pull/1). La rama `hito9-plc` permanece como respaldo del desarrollo.
 
 ## 1. Objetivo y funcionamiento
 
@@ -173,7 +173,7 @@ Los servicios `mosquitto` y `simulator` proceden del proyecto de referencia y se
 ### Obtener la versión del proyecto
 
 ```powershell
-git clone -b hito9-plc https://github.com/ben24092779-sketch/ecs-iot.git
+git clone https://github.com/ben24092779-sketch/ecs-iot.git
 cd ecs-iot
 Copy-Item .env.example .env
 ```
