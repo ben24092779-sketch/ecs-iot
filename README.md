@@ -50,7 +50,7 @@ Ender 3 Pro -- USB -- Raspberry Pi                  comandos                   P
 | **Docker Compose** | Despliega los servicios del PC |
 | **Chart.js + JavaScript** | Gráficas, tarjetas y actualización de valores por consulta periódica (cada 2,5 s) |
 
-**Montaje final:** no utiliza servo ni actuador de luz de la ESP32. La actuación física demostrada corresponde a los setpoints de **cama** y **hotend** de la Ender, aplicados por OctoPrint. El repositorio conserva un sketch histórico del Hito 4 con funciones de servo, pero **no forma parte del alcance ni se utiliza como actuador en la configuración final**.
+**Montaje final:** no utiliza servo ni actuador de luz de la ESP32. La actuación física demostrada corresponde a los setpoints de **cama** y **hotend** de la Ender, aplicados por OctoPrint. Para reproducir el sensor ambiental se incluye un [sketch de referencia sin servo](firmware/ender_esp32_ds18b20/ender_esp32_ds18b20.ino). **Este nuevo sketch está preparado para revisión/compilación, pero no se ha afirmado que fuera el que corrió en la demostración física.** El repositorio conserva un prototipo histórico del Hito 4 con funciones de servo, que no forma parte del montaje final.
 
 ## 3. Variables del dashboard
 
@@ -78,7 +78,7 @@ Las nueve variables configuradas se agrupan así:
 - Topic: `ecs/<device_slug>/<variable>`.
 - Ejemplos: `ecs/ender-esp32/temperatura_carpa`, `ecs/ender-rpi/temp_bed`.
 - Payload JSON: `{"value":22.5,"token":"TOKEN_DEL_DISPOSITIVO"}`.
-- QoS 1, sin `retain`.
+- MQTT sin `retain`. La Raspberry usa **QoS 1** para publicar sus lecturas; el sketch de referencia ESP32 usa **QoS 0** con la librería PubSubClient (y Django acepta ambos).
 
 El proceso `run_mqtt_listener` se suscribe a `ecs/+/+`, verifica el dispositivo y su token y guarda lecturas en PostgreSQL. Si el token no coincide, no acepta el dato como telemetría válida.
 
@@ -148,7 +148,7 @@ ecs-iot/
 │   │   ├── static/monitoring/   CSS y JavaScript del dashboard
 │   │   └── templates/monitoring/
 │   └── certs/emqxsl-ca.crt
-├── firmware/                   Firmware ESP32 y archivos de referencia
+├── firmware/                   Referencia ESP32 DS18B20 sin servo e histórico anterior
 ├── rpi_gateway/
 │   ├── gateway.py              Puente OctoPrint ↔ MQTT
 │   ├── ender-rpi-gateway.service
@@ -214,7 +214,7 @@ docker compose stop plc_gateway
 
 ### Raspberry Pi
 
-El servicio instalado mediante systemd en la Raspberry es `ender-rpi-gateway`. Consulta la API local de OctoPrint y se comunica con EMQX por MQTT/TLS. La configuración privada se mantiene en la Raspberry en `/etc/ender-rpi-gateway.env` y **no está en el repositorio**. El archivo `rpi_gateway/ender-rpi-gateway.env.example` describe las variables necesarias.
+El servicio instalado mediante systemd en la Raspberry es `ender-rpi-gateway`. Consulta la API local de OctoPrint y se comunica con EMQX por MQTT/TLS. La configuración privada se mantiene en la Raspberry en `/etc/ender-rpi-gateway.env` y **no está en el repositorio**. El archivo `rpi_gateway/ender-rpi-gateway.env.example` describe las variables necesarias. Para recibir y **ejecutar** órdenes MQTT de hotend/cama, el gateway requiere `REMOTE_CONTROL_ENABLED=1`; el ejemplo público deja esa opción desactivada por seguridad hasta que se habilite expresamente.
 
 La dirección IP local de la Raspberry **puede cambiar por DHCP**. No se debe asumir que una dirección antigua sigue perteneciendo a OctoPrint. OctoEverywhere es una vía opcional e independiente de acceso a la interfaz completa; la plataforma Django no depende de ese servicio.
 
