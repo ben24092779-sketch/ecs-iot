@@ -1,7 +1,7 @@
 (function () {
   const MAX_POINTS = 50;
   const ONLINE_THRESHOLD_SECONDS = 15;
-  const POLL_INTERVAL_MS = 2500;
+  const POLL_INTERVAL_MS = 750; // Browser refresh only; hardware sampling remains independent.
   const VALUE_TOLERANCE = 0.001;
 
   const root = document.getElementById("dashboard-root");
@@ -156,7 +156,14 @@
 
   const charts = {};
   const lastTimestamps = {};
-  const pendingCommands = {}; // sensorId -> value we told the device to reach, cleared once confirmed
+  const pendingCommands = {}; // slider -> { value, sentAt }; buttons use a number
+  const lastConfirmedValues = {}; // authoritative readings returned by Django
+  let pollInFlight = false; // avoid overlapping requests on slow networks
+
+  function sliderText(card, value) {
+    const el = card.querySelector('[data-role="latest-value"]');
+    if (el) el.textContent = String(value);
+  }
 
   document.querySelectorAll(".sensor-card").forEach((card) => {
     const sensorId = card.dataset.sensorId;
@@ -188,20 +195,33 @@
       const slider = card.querySelector('[data-role="gadget-slider"]');
       const status = card.querySelector('[data-role="command-status"]');
 
+      // Feedback inmediato: el número mostrado mientras se arrastra es un
+      // valor SOLICITADO, no la confirmación de que el hardware ya lo aplicó.
       slider.addEventListener("input", () => {
-        if (status) status.textContent = "Seleccionado: " + slider.value;
+        sliderText(card, slider.value);
+        if (status) status.textContent = "Seleccionado: " + slider.value + " · aún no enviado";
       });
 
       slider.addEventListener("change", async () => {
         const target = parseFloat(slider.value);
-        pendingCommands[sensorId] = target;
-        if (status) status.textContent = "Enviando " + target + "...";
+        const command = { value: target, sentAt: Date.now() };
+        pendingCommands[sensorId] = command;
+        sliderText(card, target);
+        if (status) status.textContent = "Enviando: " + target + " · esperando confirmación";
         const ok = await postCommand(sensorId, target);
+
+        // No sobreescribir un estado más reciente (otro comando o confirmación).
+        if (pendingCommands[sensorId] !== command) return;
+
         if (ok) {
-          if (status) status.textContent = "Comando enviado: " + target;
+          if (status) status.textContent = "Enviado: " + target + " · esperando confirmación";
         } else {
           delete pendingCommands[sensorId];
-          if (status) status.textContent = "ERROR al enviar comando";
+          if (lastConfirmedValues[sensorId] !== undefined) {
+            slider.value = lastConfirmedValues[sensorId];
+            sliderText(card, lastConfirmedValues[sensorId]);
+          }
+          if (status) status.textContent = "ERROR de envío · se restauró el último valor recibido";
         }
       });
     }
@@ -212,8 +232,13 @@
   }
 
   async function poll() {
+    if (pollInFlight || document.hidden) return;
+    pollInFlight = true;
     try {
-      const res = await fetch(apiUrl, { headers: { "X-Requested-With": "XMLHttpRequest" } });
+      const res = await fetch(apiUrl, {
+        cache: "no-store",
+        headers: { "X-Requested-With": "XMLHttpRequest" },
+      });
       if (!res.ok) return;
       const data = await res.json();
       const serverNow = new Date(data.server_time).getTime();
@@ -224,10 +249,13 @@
         if (!card) return;
         const widgetType = card.dataset.widgetType;
 
+        lastConfirmedValues[s.id] = s.value;
         const valueEl = card.querySelector('[data-role="latest-value"]');
         updateSummary(s, serverNow);
-        if (valueEl) {
-          valueEl.textContent = widgetType === "slider" ? String(s.value) : formattedSensorValue(s, serverNow);
+        // El valor numérico solicitado del slider no se debe sustituir por
+        // una lectura antigua mientras MQTT/OctoPrint aún no confirman.
+        if (valueEl && widgetType !== "slider") {
+          valueEl.textContent = formattedSensorValue(s, serverNow);
         }
 
         if (widgetType === "line_chart") {
@@ -274,20 +302,27 @@
         if (widgetType === "slider") {
           const slider = card.querySelector('[data-role="gadget-slider"]');
           const pending = pendingCommands[s.id];
+          const status = card.querySelector('[data-role="command-status"]');
 
           if (pending !== undefined) {
-            if (Math.abs(s.value - pending) < VALUE_TOLERANCE) {
+            // La confirmación debe venir de una lectura del gateway posterior
+            // al envío; no basta con que coincida un valor antiguo en la BD.
+            const readingTime = s.timestamp ? new Date(s.timestamp).getTime() : 0;
+            if (Math.abs(s.value - pending.value) < VALUE_TOLERANCE
+                && readingTime >= pending.sentAt) {
               delete pendingCommands[s.id];
-              const status = card.querySelector('[data-role="command-status"]');
               if (status) status.textContent = `Confirmado: ${s.value} ${s.unit || ""}`.trim();
               if (!isSliderBeingDragged(slider)) {
                 slider.value = s.value;
+                sliderText(card, s.value);
               }
             } else if (!isSliderBeingDragged(slider)) {
-              slider.value = pending;
+              slider.value = pending.value;
+              sliderText(card, pending.value);
             }
           } else if (!isSliderBeingDragged(slider)) {
             slider.value = s.value;
+            sliderText(card, s.value);
           }
         }
       });
@@ -314,9 +349,14 @@
       });
     } catch (err) {
       console.error("Polling failed", err);
+    } finally {
+      pollInFlight = false;
     }
   }
 
   poll();
   setInterval(poll, POLL_INTERVAL_MS);
+  document.addEventListener("visibilitychange", () => {
+    if (!document.hidden) poll();
+  });
 })();
