@@ -105,7 +105,7 @@ El proceso `run_mqtt_listener` se suscribe a `ecs/+/+`, verifica el dispositivo 
 - La vista del dashboard requiere autenticación con Django (`@login_required`). Los comandos web usan sesión y protección CSRF.
 - Django almacena usuarios/roles, dispositivos, variables y lecturas en **PostgreSQL**.
 - Diseño propio: identidad **ENDER IIoT**, pantalla de login, cabecera, resumen de cinco variables, tarjetas ESP32/Raspberry, gráficas, indicadores de conexión, colores diferenciados para telemetría y controles.
-- Visualización: el navegador consulta la API de últimas lecturas aproximadamente cada **2,5 s**. No se implementaron WebSockets.
+- Visualización: el navegador consulta la API de últimas lecturas aproximadamente cada **0,75 s** (sin solapar peticiones; no cambia la frecuencia física de muestreo de la Raspberry o la ESP32). No se implementaron WebSockets.
 
 ## 6. Integración PLC — TIA Portal y Snap7
 
