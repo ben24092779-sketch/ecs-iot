@@ -30,6 +30,41 @@
     return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
   }
 
+  function formatDuration(seconds) {
+    const total = Math.max(0, Math.round(Number(seconds) || 0));
+    const h = Math.floor(total / 3600);
+    const m = Math.floor((total % 3600) / 60);
+    const s = total % 60;
+    if (h > 0) return `${h} h ${m} min`;
+    if (m > 0) return `${m} min ${s} s`;
+    return `${s} s`;
+  }
+
+  function printerStateLabel(value) {
+    const states = {
+      0: "Offline",
+      1: "Operativa",
+      2: "Imprimiendo",
+      3: "Pausada",
+      4: "Error",
+    };
+    return states[Math.round(Number(value))] || `Estado ${value}`;
+  }
+
+  function formattedSensorValue(sensor) {
+    if (sensor.variable === "printer_state") return printerStateLabel(sensor.value);
+    if (sensor.variable === "raspberry_online") return Number(sensor.value) >= 1 ? "En línea" : "Sin conexión";
+    if (sensor.variable === "print_time_s") return formatDuration(sensor.value);
+    if (sensor.variable === "print_progress") return `${Number(sensor.value).toFixed(1)} %`;
+    return `${sensor.value} ${sensor.unit || ""}`.trim();
+  }
+
+  function updateSummary(sensor) {
+    document.querySelectorAll(`[data-summary-variable="${sensor.variable}"]`).forEach((el) => {
+      el.textContent = formattedSensorValue(sensor);
+    });
+  }
+
   function getCookie(name) {
     const match = document.cookie.match(new RegExp("(^| )" + name + "=([^;]+)"));
     return match ? decodeURIComponent(match[2]) : null;
@@ -181,7 +216,10 @@
         const widgetType = card.dataset.widgetType;
 
         const valueEl = card.querySelector('[data-role="latest-value"]');
-        if (valueEl) valueEl.textContent = `${s.value} ${s.unit || ""}`.trim();
+        updateSummary(s);
+        if (valueEl) {
+          valueEl.textContent = widgetType === "slider" ? String(s.value) : formattedSensorValue(s);
+        }
 
         if (widgetType === "line_chart") {
           const chart = charts[s.id];
@@ -231,6 +269,8 @@
           if (pending !== undefined) {
             if (Math.abs(s.value - pending) < VALUE_TOLERANCE) {
               delete pendingCommands[s.id];
+              const status = card.querySelector('[data-role="command-status"]');
+              if (status) status.textContent = `Confirmado: ${s.value} ${s.unit || ""}`.trim();
               if (!isSliderBeingDragged(slider)) {
                 slider.value = s.value;
               }
