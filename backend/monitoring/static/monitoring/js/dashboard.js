@@ -30,6 +30,50 @@
     return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
   }
 
+  function formatDuration(seconds) {
+    const total = Math.max(0, Math.round(Number(seconds) || 0));
+    const h = Math.floor(total / 3600);
+    const m = Math.floor((total % 3600) / 60);
+    const s = total % 60;
+    if (h > 0) return `${h} h ${m} min`;
+    if (m > 0) return `${m} min ${s} s`;
+    return `${s} s`;
+  }
+
+  function printerStateLabel(value) {
+    const states = {
+      0: "Offline",
+      1: "Operativa",
+      2: "Imprimiendo",
+      3: "Pausada",
+      4: "Error",
+    };
+    return states[Math.round(Number(value))] || `Estado ${value}`;
+  }
+
+  function readingIsFresh(sensor, serverNow, maxAgeSeconds = ONLINE_THRESHOLD_SECONDS) {
+    if (!sensor.timestamp) return false;
+    const ageSeconds = (serverNow - new Date(sensor.timestamp).getTime()) / 1000;
+    return ageSeconds <= maxAgeSeconds;
+  }
+
+  function formattedSensorValue(sensor, serverNow = Date.now()) {
+    if (sensor.variable === "printer_state") return printerStateLabel(sensor.value);
+    if (sensor.variable === "raspberry_online") {
+      if (!readingIsFresh(sensor, serverNow)) return "Sin señal";
+      return Number(sensor.value) >= 1 ? "En línea" : "Sin conexión";
+    }
+    if (sensor.variable === "print_time_s") return formatDuration(sensor.value);
+    if (sensor.variable === "print_progress") return `${Number(sensor.value).toFixed(1)} %`;
+    return `${sensor.value} ${sensor.unit || ""}`.trim();
+  }
+
+  function updateSummary(sensor, serverNow) {
+    document.querySelectorAll(`[data-summary-variable="${sensor.variable}"]`).forEach((el) => {
+      el.textContent = formattedSensorValue(sensor, serverNow);
+    });
+  }
+
   function getCookie(name) {
     const match = document.cookie.match(new RegExp("(^| )" + name + "=([^;]+)"));
     return match ? decodeURIComponent(match[2]) : null;
@@ -49,7 +93,12 @@
         },
         body: JSON.stringify({ value: value }),
       });
-      return res.ok;
+      if (!res.ok) {
+        const detail = await res.text();
+        console.error("Command rejected", res.status, detail);
+        return false;
+      }
+      return true;
     } catch (err) {
       console.error("Command failed", err);
       return false;
@@ -137,9 +186,23 @@
 
     if (widgetType === "slider") {
       const slider = card.querySelector('[data-role="gadget-slider"]');
+      const status = card.querySelector('[data-role="command-status"]');
+
+      slider.addEventListener("input", () => {
+        if (status) status.textContent = "Seleccionado: " + slider.value;
+      });
+
       slider.addEventListener("change", async () => {
-        pendingCommands[sensorId] = parseFloat(slider.value);
-        await postCommand(sensorId, parseFloat(slider.value));
+        const target = parseFloat(slider.value);
+        pendingCommands[sensorId] = target;
+        if (status) status.textContent = "Enviando " + target + "...";
+        const ok = await postCommand(sensorId, target);
+        if (ok) {
+          if (status) status.textContent = "Comando enviado: " + target;
+        } else {
+          delete pendingCommands[sensorId];
+          if (status) status.textContent = "ERROR al enviar comando";
+        }
       });
     }
   });
@@ -162,7 +225,10 @@
         const widgetType = card.dataset.widgetType;
 
         const valueEl = card.querySelector('[data-role="latest-value"]');
-        if (valueEl) valueEl.textContent = `${s.value} ${s.unit || ""}`.trim();
+        updateSummary(s, serverNow);
+        if (valueEl) {
+          valueEl.textContent = widgetType === "slider" ? String(s.value) : formattedSensorValue(s, serverNow);
+        }
 
         if (widgetType === "line_chart") {
           const chart = charts[s.id];
@@ -207,34 +273,43 @@
 
         if (widgetType === "slider") {
           const slider = card.querySelector('[data-role="gadget-slider"]');
-          if (!isSliderBeingDragged(slider)) {
-            slider.value = s.value;
-          }
           const pending = pendingCommands[s.id];
-          if (pending !== undefined && Math.abs(s.value - pending) < VALUE_TOLERANCE) {
-            delete pendingCommands[s.id];
+
+          if (pending !== undefined) {
+            if (Math.abs(s.value - pending) < VALUE_TOLERANCE) {
+              delete pendingCommands[s.id];
+              const status = card.querySelector('[data-role="command-status"]');
+              if (status) status.textContent = `Confirmado: ${s.value} ${s.unit || ""}`.trim();
+              if (!isSliderBeingDragged(slider)) {
+                slider.value = s.value;
+              }
+            } else if (!isSliderBeingDragged(slider)) {
+              slider.value = pending;
+            }
+          } else if (!isSliderBeingDragged(slider)) {
+            slider.value = s.value;
           }
         }
       });
 
       data.devices.forEach((dev) => {
-        const card = document.querySelector(`.device-card[data-device-id="${dev.id}"]`);
+        const card = document.querySelector(`.project-device-panel[data-device-id="${dev.id}"]`);
         if (!card) return;
         const badge = card.querySelector('[data-role="status-badge"]');
         if (!badge) return;
 
         if (!dev.last_seen_at) {
           badge.textContent = "sin datos";
-          badge.className = "badge";
+          badge.className = "badge project-badge";
           return;
         }
         const ageSeconds = (serverNow - new Date(dev.last_seen_at).getTime()) / 1000;
         if (ageSeconds <= ONLINE_THRESHOLD_SECONDS) {
           badge.textContent = "en línea";
-          badge.className = "badge online";
+          badge.className = "badge project-badge online";
         } else {
           badge.textContent = "sin señal";
-          badge.className = "badge offline";
+          badge.className = "badge project-badge offline";
         }
       });
     } catch (err) {

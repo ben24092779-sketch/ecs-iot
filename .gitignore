@@ -2,6 +2,8 @@
 .env
 mosquitto/config/passwd
 firmware/**/config.h
+firmware/local_secrets.h
+firmware/**/local_secrets.h
 
 # Python
 __pycache__/
@@ -28,3 +30,6 @@ Thumbs.db
 
 # Logs
 *.log
+
+# Raspberry Pi gateway local secrets
+rpi_gateway/*.env

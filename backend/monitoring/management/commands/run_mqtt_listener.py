@@ -1,6 +1,7 @@
 import json
 import logging
 import secrets
+import ssl
 
 import paho.mqtt.client as mqtt
 from django.conf import settings
@@ -17,6 +18,13 @@ DEFAULT_UNITS = {
     "voltaje": "V",
     "continuidad": "Ω",
     "temperatura": "°C",
+    "temperatura_carpa": "°C",
+    "temp_hotend": "°C",
+    "sp_hotend": "°C",
+    "temp_bed": "°C",
+    "sp_bed": "°C",
+    "print_progress": "%",
+    "print_time_s": "s",
     "humedad": "%",
     "presion": "hPa",
     "gas": "kΩ",
@@ -33,6 +41,14 @@ class Command(BaseCommand):
         if settings.MQTT_USERNAME:
             client.username_pw_set(settings.MQTT_USERNAME, settings.MQTT_PASSWORD)
 
+        if settings.MQTT_TLS_ENABLED:
+            client.tls_set(
+                ca_certs=settings.MQTT_CA_CERT or None,
+                cert_reqs=ssl.CERT_REQUIRED,
+                tls_version=ssl.PROTOCOL_TLS_CLIENT,
+            )
+            client.tls_insecure_set(False)
+
         def on_connect(client, userdata, flags, rc):
             if rc == 0:
                 self.stdout.write(self.style.SUCCESS(
@@ -43,16 +59,21 @@ class Command(BaseCommand):
             else:
                 self.stdout.write(self.style.ERROR(f"MQTT connect failed with rc={rc}"))
 
+        def on_subscribe(client, userdata, mid, granted_qos):
+            self.stdout.write(f"MQTT SUBACK mid={mid} granted_qos={granted_qos}")
+
         def on_disconnect(client, userdata, rc):
             logger.warning("Disconnected from MQTT broker (rc=%s), will auto-reconnect", rc)
 
         def on_message(client, userdata, msg):
+            self.stdout.write(f"MQTT RX topic={msg.topic} bytes={len(msg.payload)}")
             try:
                 _handle_message(msg.topic, msg.payload)
             except Exception:
                 logger.exception("Failed to process MQTT message on topic %s", msg.topic)
 
         client.on_connect = on_connect
+        client.on_subscribe = on_subscribe
         client.on_disconnect = on_disconnect
         client.on_message = on_message
 

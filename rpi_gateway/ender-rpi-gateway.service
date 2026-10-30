@@ -1,0 +1,16 @@
+[Unit]
+Description=Ender 3 OctoPrint MQTT Gateway
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=pi
+WorkingDirectory=/opt/ender-rpi-gateway
+EnvironmentFile=/etc/ender-rpi-gateway.env
+ExecStart=/opt/ender-rpi-gateway/venv/bin/python /opt/ender-rpi-gateway/gateway.py
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
