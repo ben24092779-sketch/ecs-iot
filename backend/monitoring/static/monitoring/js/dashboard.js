@@ -284,23 +284,23 @@
       });
 
       data.devices.forEach((dev) => {
-        const card = document.querySelector(`.device-card[data-device-id="${dev.id}"]`);
+        const card = document.querySelector(`.project-device-panel[data-device-id="${dev.id}"]`);
         if (!card) return;
         const badge = card.querySelector('[data-role="status-badge"]');
         if (!badge) return;
 
         if (!dev.last_seen_at) {
           badge.textContent = "sin datos";
-          badge.className = "badge";
+          badge.className = "badge project-badge";
           return;
         }
         const ageSeconds = (serverNow - new Date(dev.last_seen_at).getTime()) / 1000;
         if (ageSeconds <= ONLINE_THRESHOLD_SECONDS) {
           badge.textContent = "en línea";
-          badge.className = "badge online";
+          badge.className = "badge project-badge online";
         } else {
           badge.textContent = "sin señal";
-          badge.className = "badge offline";
+          badge.className = "badge project-badge offline";
         }
       });
     } catch (err) {
