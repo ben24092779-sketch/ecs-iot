@@ -6,7 +6,7 @@ from django.templatetags.static import static
 from django.contrib.auth.decorators import login_required
 from django.contrib.auth.models import User
 from django.core.exceptions import PermissionDenied
-from django.db.models import Count, Prefetch, Q
+from django.db.models import Count, OuterRef, Prefetch, Q, Subquery
 from django.http import HttpResponseNotAllowed, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.utils import timezone
@@ -24,7 +24,7 @@ from .forms import (
     UserCreateForm,
     WidgetForm,
 )
-from .models import Device, ManualEntry, Product, ProductType, Profile, Sensor, SiteBranding
+from .models import Device, ManualEntry, Product, ProductType, Profile, Sensor, SensorReading, SiteBranding
 from .mqtt_publish import publish_command
 from .permissions import (
     admin_or_global_required,
@@ -70,28 +70,34 @@ def dashboard(request):
 
 @login_required
 def api_latest_values(request):
-    visible_devices = devices_for(request.user)
+    # Consulta optimizada para el dashboard rápido: antes se ejecutaba una
+    # consulta por sensor para obtener la última lectura. Con Subquery se
+    # recuperan valor y fecha de los 9 sensores con una sola consulta SQL.
+    visible_devices = devices_for(request.user).filter(is_active=True)
+    latest = SensorReading.objects.filter(sensor_id=OuterRef("pk")).order_by("-timestamp")
     sensors = (
         Sensor.objects.filter(
             is_active=True, device__is_active=True, device__in=visible_devices
         )
         .exclude(variable="servo")
         .select_related("device")
+        .annotate(
+            latest_value=Subquery(latest.values("value")[:1]),
+            latest_timestamp=Subquery(latest.values("timestamp")[:1]),
+        )
     )
 
-    sensor_payload = []
-    for sensor in sensors:
-        latest = sensor.readings.first()
-        sensor_payload.append(
-            {
-                "id": sensor.id,
-                "device_slug": sensor.device.slug,
-                "variable": sensor.variable,
-                "unit": sensor.unit,
-                "value": latest.value if latest else None,
-                "timestamp": latest.timestamp.isoformat() if latest else None,
-            }
-        )
+    sensor_payload = [
+        {
+            "id": sensor.id,
+            "device_slug": sensor.device.slug,
+            "variable": sensor.variable,
+            "unit": sensor.unit,
+            "value": sensor.latest_value,
+            "timestamp": sensor.latest_timestamp.isoformat() if sensor.latest_timestamp else None,
+        }
+        for sensor in sensors
+    ]
 
     device_payload = [
         {
@@ -100,17 +106,18 @@ def api_latest_values(request):
             "name": device.name,
             "last_seen_at": device.last_seen_at.isoformat() if device.last_seen_at else None,
         }
-        for device in visible_devices.filter(is_active=True)
+        for device in visible_devices
     ]
 
-    return JsonResponse(
+    response = JsonResponse(
         {
             "server_time": timezone.now().isoformat(),
             "sensors": sensor_payload,
             "devices": device_payload,
         }
     )
-
+    response["Cache-Control"] = "no-store"
+    return response
 
 DEVICE_SORT_CHOICES = {
     "name": "Nombre (A-Z)",
