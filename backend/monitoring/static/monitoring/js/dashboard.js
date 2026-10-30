@@ -51,17 +51,26 @@
     return states[Math.round(Number(value))] || `Estado ${value}`;
   }
 
-  function formattedSensorValue(sensor) {
+  function readingIsFresh(sensor, serverNow, maxAgeSeconds = ONLINE_THRESHOLD_SECONDS) {
+    if (!sensor.timestamp) return false;
+    const ageSeconds = (serverNow - new Date(sensor.timestamp).getTime()) / 1000;
+    return ageSeconds <= maxAgeSeconds;
+  }
+
+  function formattedSensorValue(sensor, serverNow = Date.now()) {
     if (sensor.variable === "printer_state") return printerStateLabel(sensor.value);
-    if (sensor.variable === "raspberry_online") return Number(sensor.value) >= 1 ? "En línea" : "Sin conexión";
+    if (sensor.variable === "raspberry_online") {
+      if (!readingIsFresh(sensor, serverNow)) return "Sin señal";
+      return Number(sensor.value) >= 1 ? "En línea" : "Sin conexión";
+    }
     if (sensor.variable === "print_time_s") return formatDuration(sensor.value);
     if (sensor.variable === "print_progress") return `${Number(sensor.value).toFixed(1)} %`;
     return `${sensor.value} ${sensor.unit || ""}`.trim();
   }
 
-  function updateSummary(sensor) {
+  function updateSummary(sensor, serverNow) {
     document.querySelectorAll(`[data-summary-variable="${sensor.variable}"]`).forEach((el) => {
-      el.textContent = formattedSensorValue(sensor);
+      el.textContent = formattedSensorValue(sensor, serverNow);
     });
   }
 
@@ -216,9 +225,9 @@
         const widgetType = card.dataset.widgetType;
 
         const valueEl = card.querySelector('[data-role="latest-value"]');
-        updateSummary(s);
+        updateSummary(s, serverNow);
         if (valueEl) {
-          valueEl.textContent = widgetType === "slider" ? String(s.value) : formattedSensorValue(s);
+          valueEl.textContent = widgetType === "slider" ? String(s.value) : formattedSensorValue(s, serverNow);
         }
 
         if (widgetType === "line_chart") {
