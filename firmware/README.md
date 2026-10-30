@@ -1,89 +1,40 @@
-# Firmware ESP32 — ECS IoT
+# ESP32 — temperatura de carpa (Tarea 2 / Ender IIoT)
 
-Sketch de ejemplo para un ESP32 que publica telemetría hacia la plataforma
-ECS IoT y opcionalmente recibe comandos (gadget Botón/Slider), siguiendo el
-"Contrato MQTT" documentado en el `README.md` raíz del proyecto.
+## Configuración utilizada en la demostración
 
-## Requisitos
+La **ESP32** funciona como nodo sensor IoT para medir la temperatura de la carpa de una impresora **Ender 3 Pro** usando un **DS18B20**. Publica la variable `temperatura_carpa` en **EMQX Cloud** mediante MQTT cifrado (TLS, puerto 8883); el listener Django recibe las lecturas y las guarda en PostgreSQL.
 
-- [Arduino IDE](https://www.arduino.cc/en/software) 2.x con soporte para
-  placas ESP32 instalado (Boards Manager → `esp32` by Espressif Systems).
-- Librerías (Sketch → Include Library → Manage Libraries):
-  - **WiFiManager** (tzapu)
-  - **PubSubClient** (Nick O'Leary)
-  - **ArduinoJson** (Benoit Blanchon, v6.x)
+| Configuración | Valor / función |
+|---|---|
+| Hardware | ESP32 + sensor digital DS18B20 |
+| Entrada física | Sensor DS18B20 (1-Wire) |
+| Nombre del dispositivo Django | `ender-esp32` |
+| Topic publicado | `ecs/ender-esp32/temperatura_carpa` |
+| Unidad | °C |
+| Tipo de mensaje | JSON: `{"value":22.5,"token":"TOKEN_DJANGO"}` |
+| Broker | EMQX Cloud (TLS 8883) |
+| Cuenta MQTT | `esp32-ender` |
+| Dashboard | Gráfica de temperatura de carpa |
 
-## 1. Registra el dispositivo en la plataforma
+La contraseña MQTT y el token del dispositivo **no se publican** en el repositorio. Deben coincidir con los configurados en EMQX y Django, respectivamente.
 
-Antes de tocar el firmware, el `Device` debe existir en el backend (las
-lecturas de un dispositivo no registrado, o con token inválido, se
-descartan y quedan en cuarentena como `UnregisteredReading`):
+## Alcance final (sin servo)
 
-1. Entra al dashboard (ver sección "Cómo revisar la plataforma" abajo) e
-   inicia sesión.
-2. **Dispositivos → + Agregar sensor**, completa nombre, **ID del
-   dispositivo** (slug, ej. `subestacion-01`) y opcionalmente etiqueta/ubicación.
-3. Al guardar, la plataforma muestra la página de **aprovisionamiento** con
-   el **slug** y el **token** único de ese dispositivo. Cópialos.
+**La configuración final del proyecto no utiliza servo ni control de luz desde la ESP32.** En el dashboard solo se muestra la temperatura de carpa. La actuación física sobre la Ender se realiza a través de **Raspberry Pi → OctoPrint** con comandos `sp_bed` y `sp_hotend`.
 
-## 2. Configura el sketch
+### Aclaración sobre archivos históricos del repositorio
 
-```
-copy config.example.h esp32_ecs_iot\config.h
-```
+- `temperatura_mqtt_hito4.ino` es un **respaldo de un prototipo anterior**, que incluye rutinas de servo, LED, registro Google Sheets y otras funciones. **No corresponde al montaje final sin servo y no debe flashearse como firmware final sin adaptación y validación**.
+- `esp32_ecs_iot/esp32_ecs_iot.ino` es el **ejemplo genérico heredado del repositorio docente**, no el firmware operativo específico del DS18B20.
+- `local_secrets.example.h` ilustra el manejo de credenciales locales. Los secretos reales deben permanecer fuera de GitHub.
 
-Edita `esp32_ecs_iot/config.h`:
+Se conserva el histórico para trazabilidad de desarrollo, pero la evidencia de operación final es la **ESP32 física publicando `temperatura_carpa`** y su gráfica activa en Django. El programa histórico por sí solo **no constituye un firmware mínimo y reproducible del montaje final**.
 
-- `DEVICE_SLUG` / `DEVICE_TOKEN` — los del paso 1.
-- `MQTT_BROKER_HOST` / `MQTT_BROKER_PORT`:
-  - **Local (docker-compose):** la IP de la PC que corre Docker en tu red
-    local (el ESP32 es otro dispositivo en la LAN, así que `localhost` no
-    sirve) y el puerto `MOSQUITTO_HOST_PORT` de tu `.env`.
-  - **Railway (producción):** el host:puerto del **TCP Proxy** del servicio
-    `mosquitto` (Settings → Networking → TCP Proxy en Railway).
-- `MQTT_USERNAME` / `MQTT_PASSWORD` — igual que `MQTT_USERNAME`/`MQTT_PASSWORD`
-  de tu `.env`.
-- `SENSOR_VARIABLE`, `SENSOR_PIN`, `SENSOR_RAW_MIN/MAX`, `SENSOR_VALUE_MIN/MAX`
-  — calibra según el sensor real que conectes (telurómetro u otro
-  instrumental con salida analógica). Los valores por defecto son solo un
-  ejemplo para `resistencia_tierra`.
+## Comprobar desde Django
 
-`config.h` está en `.gitignore` (contiene el token del dispositivo) — no se
-sube al repo.
+1. Entrar a `http://localhost:8000/` e iniciar sesión.
+2. Identificar `Temperatura de carpa - ESP32` en el dashboard.
+3. Confirmar actualización de `temperatura_carpa` y estado de dispositivo con lectura reciente.
+4. Si no llegan mensajes, comprobar en EMQX `Clients` (conexión), `Authentication` (credenciales) y `Authorization` (permiso de publicación), además del slug/token Django.
 
-## 3. Flashea y prueba
-
-1. Selecciona tu placa ESP32 en Arduino IDE y el puerto correspondiente.
-2. Sube `esp32_ecs_iot.ino`.
-3. Abre el **Monitor Serie** (115200 baud). Al primer arranque (o si no
-   recuerda ninguna red), el ESP32 levanta un punto de acceso WiFi llamado
-   como `DEVICE_AP_TAG` — conéctate a él desde tu celular/PC y sigue el
-   portal cautivo para darle el SSID/contraseña de tu WiFi real (las
-   credenciales de red **no** se programan en el código ni las pide la
-   plataforma, se ingresan directo en el hardware, como indica el README raíz).
-4. Tras conectar, el sketch se conecta al broker MQTT y empieza a publicar
-   en `ecs/<slug>/<variable>` cada `PUBLISH_INTERVAL_MS`. Deberías ver la
-   gráfica llenarse en `/monitoring/` en unos segundos.
-5. Si agregaste un gadget **Botón** o **Slider** a la variable `relay`
-   (`COMMAND_VARIABLE`) desde `/monitoring/sensors/<id>/widget/`, al
-   accionarlo en el dashboard el ESP32 debería recibir el comando y prender/
-   apagar el pin `COMMAND_PIN` (LED integrado por defecto), y el dashboard
-   debe reflejar el estado confirmado.
-
-## Diagnóstico rápido
-
-- **No aparecen lecturas:** revisa el Monitor Serie del ESP32 (¿conectó
-  WiFi? ¿conectó MQTT, o reintenta con `rc=...`?) y el Admin de Django
-  (`/admin/monitoring/unregisteredreading/`) — si el mensaje llegó pero con
-  slug o token incorrecto, aparecerá ahí con el motivo.
-- **`rc=5` o falla de conexión MQTT:** usuario/contraseña del broker
-  incorrectos (`MQTT_USERNAME`/`MQTT_PASSWORD` en `config.h` vs `.env`).
-- **El comando no llega:** confirma que el topic suscrito
-  (`ecs/<slug>/relay/set`, visible en el log de arranque) coincide
-  exactamente con el que usa la plataforma para ese sensor.
-- Puedes espiar el tráfico MQTT sin hardware con `mosquitto_sub` desde otra
-  terminal (con el cliente `mosquitto` instalado o el contenedor
-  `eclipse-mosquitto:2`):
-  ```
-  mosquitto_sub -h <broker-host> -p <puerto> -u ecs -P <MQTT_PASSWORD> -t "ecs/#" -v
-  ```
+Consulta el [README principal](../README.md) para arquitectura y criterios de la rúbrica.
