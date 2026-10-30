@@ -3,6 +3,7 @@
   const ONLINE_THRESHOLD_SECONDS = 15;
   const POLL_INTERVAL_MS = 750; // Browser refresh only; hardware sampling remains independent.
   const VALUE_TOLERANCE = 0.001;
+  const COMMAND_CONFIRM_TIMEOUT_MS = 20000;
 
   const root = document.getElementById("dashboard-root");
   if (!root) return;
@@ -305,6 +306,15 @@
           const status = card.querySelector('[data-role="command-status"]');
 
           if (pending !== undefined) {
+            if (Date.now() - pending.sentAt > COMMAND_CONFIRM_TIMEOUT_MS) {
+              delete pendingCommands[s.id];
+              if (status) status.textContent = "Sin confirmación del equipo · revisa OctoPrint";
+              if (!isSliderBeingDragged(slider)) {
+                slider.value = s.value;
+                sliderText(card, s.value);
+              }
+              return;
+            }
             // La confirmación debe venir de una lectura del gateway posterior
             // al envío; no basta con que coincida un valor antiguo en la BD.
             const readingTime = s.timestamp ? new Date(s.timestamp).getTime() : 0;
