@@ -306,15 +306,6 @@
           const status = card.querySelector('[data-role="command-status"]');
 
           if (pending !== undefined) {
-            if (Date.now() - pending.sentAt > COMMAND_CONFIRM_TIMEOUT_MS) {
-              delete pendingCommands[s.id];
-              if (status) status.textContent = "Sin confirmación del equipo · revisa OctoPrint";
-              if (!isSliderBeingDragged(slider)) {
-                slider.value = s.value;
-                sliderText(card, s.value);
-              }
-              return;
-            }
             // La confirmación debe venir de una lectura del gateway posterior
             // al envío; no basta con que coincida un valor antiguo en la BD.
             const readingTime = s.timestamp ? new Date(s.timestamp).getTime() : 0;
@@ -322,6 +313,13 @@
                 && readingTime >= pending.sentAt) {
               delete pendingCommands[s.id];
               if (status) status.textContent = `Confirmado: ${s.value} ${s.unit || ""}`.trim();
+              if (!isSliderBeingDragged(slider)) {
+                slider.value = s.value;
+                sliderText(card, s.value);
+              }
+            } else if (Date.now() - pending.sentAt > COMMAND_CONFIRM_TIMEOUT_MS) {
+              delete pendingCommands[s.id];
+              if (status) status.textContent = "Sin confirmación del equipo · revisa OctoPrint";
               if (!isSliderBeingDragged(slider)) {
                 slider.value = s.value;
                 sliderText(card, s.value);
