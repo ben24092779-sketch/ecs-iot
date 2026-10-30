@@ -3,6 +3,7 @@
 mosquitto/config/passwd
 firmware/**/config.h
 firmware/local_secrets.h
+firmware/**/local_secrets.h
 
 # Python
 __pycache__/
