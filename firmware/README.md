@@ -18,6 +18,20 @@ La **ESP32** funciona como nodo sensor IoT para medir la temperatura de la carpa
 
 La contraseña MQTT y el token del dispositivo **no se publican** en el repositorio. Deben coincidir con los configurados en EMQX y Django, respectivamente.
 
+## Sketch de referencia del montaje final
+
+En [`ender_esp32_ds18b20/ender_esp32_ds18b20.ino`](ender_esp32_ds18b20/ender_esp32_ds18b20.ino) se incluye una implementación **solo de temperatura** para revisar y reproducir la integración. Usa OneWire, DallasTemperature, PubSubClient y WiFiClientSecure; no incluye servo, LED ni Google Sheets.
+
+Para prepararla en Arduino IDE:
+
+1. Instalar soporte ESP32, librerías **OneWire**, **DallasTemperature** y **PubSubClient**.
+2. Copiar `ender_esp32_ds18b20/local_secrets.example.h` a `ender_esp32_ds18b20/local_secrets.h` y completar Wi-Fi, contraseña EMQX del cliente `esp32-ender` y token de Django para `ender-esp32`.
+3. Abrir el `.ino` ubicado en esa misma carpeta; el certificado CA público ya está como `emqx_ca.h`.
+4. Seleccionar la placa y el puerto, compilar y cargar **solo después de verificar conexiones y configuración**, sin sobrescribir sin necesidad el firmware que ya está funcionando en la ESP32.
+5. Monitor serie a 115200 baudios; comprobar publicación `ecs/ender-esp32/temperatura_carpa`.
+
+**Este sketch limpio es un entregable de referencia añadido después de la demostración; no se ha probado ni cargado en la placa física durante esta revisión.** El comportamiento real de publicación de temperatura ya fue comprobado con la ESP32 existente.
+
 ## Alcance final (sin servo)
 
 **La configuración final del proyecto no utiliza servo ni control de luz desde la ESP32.** En el dashboard solo se muestra la temperatura de carpa. La actuación física sobre la Ender se realiza a través de **Raspberry Pi → OctoPrint** con comandos `sp_bed` y `sp_hotend`.
@@ -28,7 +42,7 @@ La contraseña MQTT y el token del dispositivo **no se publican** en el reposito
 - `esp32_ecs_iot/esp32_ecs_iot.ino` es el **ejemplo genérico heredado del repositorio docente**, no el firmware operativo específico del DS18B20.
 - `local_secrets.example.h` ilustra el manejo de credenciales locales. Los secretos reales deben permanecer fuera de GitHub.
 
-Se conserva el histórico para trazabilidad de desarrollo, pero la evidencia de operación final es la **ESP32 física publicando `temperatura_carpa`** y su gráfica activa en Django. El programa histórico por sí solo **no constituye un firmware mínimo y reproducible del montaje final**.
+Se conserva el histórico para trazabilidad de desarrollo. La evidencia operativa es la **ESP32 física publicando `temperatura_carpa`** y su gráfica activa en Django; el nuevo sketch de referencia permite revisar por separado la versión final simplificada.
 
 ## Comprobar desde Django
 
